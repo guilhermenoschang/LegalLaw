@@ -20,6 +20,10 @@ Funcional hoje:
 - Agenda com Google Calendar mais explicito e criacao de evento no Google quando conectado.
 - tarefas com prazo, bloco de horario e exibicao dentro da Agenda semanal.
 - metas levadas ao Dashboard com progresso individual, sinal de atencao e acao rapida.
+- aba Disciplinas para organizar o semestre por materia, plano de aula, topicos, materiais e revisoes;
+- assistente com acoes controladas para criar agenda, tarefas, projetos, metas, sessoes de estudo, anotacoes e apoio educacional de pena;
+- aba Anotacoes para centralizar notas livres e notas de artigos;
+- aba Audio/Aulas para gravar aula no navegador, transcrever quando suportado e gerar resumo de estudo com IA.
 
 Ainda nao vender como pronto:
 
@@ -30,6 +34,7 @@ Ainda nao vender como pronto:
 - Google Calendar bidirecional completo;
 - dosimetria penal profissional para caso concreto;
 - controle fino de custos e quotas de IA;
+- transcricao profissional/forense de audio;
 - testes automatizados e auditoria de seguranca completa.
 
 ## Stack
@@ -80,7 +85,8 @@ Variaveis que devem ser cadastradas em Site configuration > Environment variable
 ```env
 AI_PROVIDER=gemini
 GEMINI_API_KEY=
-GEMINI_MODEL=gemini-1.5-flash
+GEMINI_MODEL=gemini-3.6-flash
+GEMINI_FALLBACK_MODEL=gemini-3.5-flash-lite
 
 VITE_FIREBASE_API_KEY=
 VITE_FIREBASE_AUTH_DOMAIN=
@@ -130,7 +136,8 @@ Variaveis secretas server-side:
 ```env
 AI_PROVIDER=gemini
 GEMINI_API_KEY=
-GEMINI_MODEL=gemini-1.5-flash
+GEMINI_MODEL=gemini-3.6-flash
+GEMINI_FALLBACK_MODEL=gemini-3.5-flash-lite
 
 # ou
 AI_PROVIDER=anthropic
@@ -172,6 +179,48 @@ POST /api/ai
 O endpoint escolhe o provedor por `AI_PROVIDER`.
 
 Isso cria um ponto unico para limites, logs, custos e filtros antes de escalar.
+
+O assistente pode executar acoes internas controladas no app:
+
+- criar projeto, tarefa, evento de agenda, meta e sessao de estudo;
+- criar disciplina, estruturar topicos e salvar materiais vinculados;
+- salvar anotacao livre ou anotacao vinculada a artigo;
+- fazer calculo educacional simples de pena, sem substituir analise juridica.
+
+Ele nao exclui dados automaticamente.
+
+## Disciplinas
+
+A aba Disciplinas e o centro do semestre.
+
+Fluxo recomendado:
+
+1. Cadastre a disciplina.
+2. Cole o plano de aula ou plano de ensino.
+3. Use `IA: extrair topicos`.
+4. Revise os topicos gerados.
+5. Use as acoes rapidas para criar tarefas, agendar revisoes, gravar aulas e consultar anotacoes.
+
+Cada disciplina pode guardar:
+
+- professor, semestre, carga horaria, status e descricao;
+- plano de aula completo;
+- topicos e subtopicos;
+- materiais, links, bibliografia e referencias;
+- revisoes geradas por IA;
+- vinculos com tarefas, agenda, aulas gravadas e anotacoes.
+
+O Dashboard mostra o progresso geral do semestre quando houver disciplinas cadastradas.
+
+## Audio e transcricao
+
+A aba Audio/Aulas usa recursos do navegador:
+
+- `MediaRecorder` para gravar audio com permissao do microfone;
+- reconhecimento de fala do navegador quando disponivel;
+- IA server-side para resumir a transcricao e salvar o material em Anotacoes.
+
+A transcricao automatica deve ser tratada como material preliminar de estudo. Para uso profissional, revise o audio e o texto antes de confiar no conteudo.
 
 ## Fontes juridicas
 

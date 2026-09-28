@@ -1,0 +1,119 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * { box-sizing: border-box; }
+  body {
+    @apply bg-slate-50 text-slate-900 font-sans antialiased;
+    background-image:
+      linear-gradient(135deg, rgba(60,52,137,0.06), transparent 34%),
+      linear-gradient(90deg, rgba(15,23,42,0.035) 1px, transparent 1px),
+      linear-gradient(rgba(15,23,42,0.035) 1px, transparent 1px);
+    background-size: auto, 28px 28px, 28px 28px;
+  }
+  .dark body {
+    @apply bg-slate-950 text-slate-100;
+    background-image:
+      radial-gradient(circle at 24% 8%, rgba(127,119,221,0.18), transparent 34%),
+      linear-gradient(90deg, rgba(148,163,184,0.05) 1px, transparent 1px),
+      linear-gradient(rgba(148,163,184,0.05) 1px, transparent 1px);
+    background-size: auto, 32px 32px, 32px 32px;
+  }
+}
+
+@layer components {
+  .sidebar-item {
+    @apply flex items-center gap-2.5 px-3 py-2 rounded-lg cursor-pointer text-sm text-gray-600 transition-colors relative;
+  }
+  .sidebar-item:hover { @apply bg-gray-100; }
+  .sidebar-item.active {
+    @apply bg-brand-50 text-brand-800;
+  }
+  .sidebar-item.active::before {
+    content: '';
+    @apply absolute left-0 top-1 bottom-1 w-0.5 bg-brand-600 rounded-r;
+  }
+  .dark .sidebar-item { @apply text-gray-400; }
+  .dark .sidebar-item:hover { @apply bg-gray-800; }
+  .dark .sidebar-item.active { @apply bg-brand-900/40 text-brand-200; }
+
+  .card {
+    @apply bg-white/90 border border-slate-200 rounded-lg p-4 shadow-sm;
+  }
+  .dark .card { @apply bg-slate-900/90 border-slate-800 shadow-none; }
+
+  .panel-hero {
+    @apply rounded-lg border border-slate-800 bg-slate-950 text-white p-5 overflow-hidden relative;
+    background-image:
+      linear-gradient(135deg, rgba(127,119,221,0.25), transparent 42%),
+      linear-gradient(90deg, rgba(255,255,255,0.055) 1px, transparent 1px),
+      linear-gradient(rgba(255,255,255,0.055) 1px, transparent 1px);
+    background-size: auto, 24px 24px, 24px 24px;
+  }
+
+  .eyebrow {
+    @apply text-[10px] font-semibold uppercase tracking-widest text-brand-100;
+  }
+
+  .legal-band {
+    @apply rounded-lg border border-slate-200 bg-white/80 p-4;
+  }
+  .dark .legal-band { @apply border-slate-800 bg-slate-900/70; }
+
+  .btn-primary {
+    @apply inline-flex items-center gap-1.5 h-8 px-3 bg-brand-800 text-white text-sm rounded-md hover:bg-brand-900 transition-colors;
+  }
+  .btn-secondary {
+    @apply inline-flex items-center gap-1.5 h-8 px-3 bg-white border border-gray-200 text-gray-700 text-sm rounded-md hover:bg-gray-50 transition-colors;
+  }
+  .dark .btn-secondary { @apply bg-gray-800 border-gray-700 text-gray-300 hover:bg-gray-700; }
+
+  .input {
+    @apply w-full h-9 border border-gray-200 rounded-md px-3 text-sm bg-white text-gray-900 focus:outline-none focus:border-brand-400 transition-colors;
+  }
+  .dark .input { @apply bg-gray-800 border-gray-700 text-gray-100 focus:border-brand-400; }
+
+  .select {
+    @apply h-9 border border-gray-200 rounded-md px-2 text-sm bg-white text-gray-900 focus:outline-none focus:border-brand-400;
+  }
+  .dark .select { @apply bg-gray-800 border-gray-700 text-gray-100; }
+
+  .label {
+    @apply block text-xs text-gray-500 mb-1;
+  }
+
+  .chip {
+    @apply inline-flex items-center text-xs px-2 py-0.5 rounded-md border;
+  }
+  .chip-alta    { @apply bg-red-50 text-red-700 border-red-200; }
+  .chip-media   { @apply bg-amber-50 text-amber-700 border-amber-200; }
+  .chip-baixa   { @apply bg-green-50 text-green-700 border-green-200; }
+  .chip-pendente  { @apply bg-brand-50 text-brand-600 border-brand-200; }
+  .chip-andamento { @apply bg-amber-50 text-amber-700 border-amber-200; }
+  .chip-concluida { @apply bg-green-50 text-green-700 border-green-200; }
+
+  .modal-bg {
+    @apply fixed inset-0 bg-black/40 flex items-start justify-center pt-16 z-50;
+  }
+  .modal {
+    @apply bg-white rounded-lg p-5 w-full max-w-md border border-gray-200 max-h-[80vh] overflow-y-auto;
+  }
+  .dark .modal { @apply bg-gray-900 border-gray-700; }
+
+  .progress-bar {
+    @apply h-1.5 bg-gray-100 rounded-full overflow-hidden;
+  }
+  .progress-fill { @apply h-full rounded-full transition-all duration-500; }
+}
+
+
+/* Animações */
+@keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+.fade-in { animation: fadeIn .15s ease; }
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 4px; }
+.dark ::-webkit-scrollbar-thumb { background: #4b5563; }
