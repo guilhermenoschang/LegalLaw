@@ -1,7 +1,8 @@
 // ─── Constituição ──────────────────────────────────────────────────────────────
 import { useEffect, useState } from 'react'
 import { askAI, askAIJSON } from '@/lib/ai'
-import { useLegalSourceStore, useUIStore } from '@/store'
+import { searchLegalArticles } from '@/lib/legalSearch'
+import { getAppStateSnapshot, hydrateAppState, useLegalSourceStore, useUIStore } from '@/store'
 
 const CF_DATA = {
   'art. 5': { title: 'Título II — Direitos e Garantias Fundamentais', ch: 'Capítulo I', arts: [
@@ -43,11 +44,14 @@ function LegalNotice({ children }) {
 
 export function Constituicao() {
   const { constitution, notes, favorites, updateSource, setNote, toggleFavorite } = useLegalSourceStore()
+  const { setPanel } = useUIStore()
   const [query, setQuery]   = useState('')
   const [result, setResult] = useState(null)
-  const [aiExpl, setAiExpl] = useState('')
-  const [loading, setLoading] = useState(false)
+  const [aiExpl, setAiExpl] = useState(null)
+  const [loadingId, setLoadingId] = useState(null)
+  const [savedArticleId, setSavedArticleId] = useState(null)
   const [updating, setUpdating] = useState(false)
+  const [refreshMessage, setRefreshMessage] = useState('')
 
   const data = constitution?.articles?.length ? constitution.articles : Object.values(CF_DATA).flatMap((group) => group.arts)
   const selected = result || { title: constitution ? 'Constituição Federal' : CF_DATA['art. 5'].title, ch: constitution ? `${constitution.articleCount} artigos importados` : CF_DATA['art. 5'].ch, arts: constitution ? data.slice(0, 12) : CF_DATA['art. 5'].arts }
@@ -57,47 +61,87 @@ export function Constituicao() {
   }, [])
 
   const search = (q) => {
-    const raw = (q || query).toLowerCase().replace(/\s/g, '')
+    const term = String(q || query).trim()
+    if (!term) return
+
     if (constitution?.articles?.length) {
-      const found = constitution.articles.filter((article) =>
-        article.n.toLowerCase().replace(/\s/g, '').includes(raw) ||
-        article.t.toLowerCase().includes((q || query).toLowerCase())
-      )
+      const found = searchLegalArticles(constitution.articles, term)
       if (found.length) {
         setResult({ title: 'Resultado da busca', ch: `${found.length} artigo(s)`, arts: found.slice(0, 50) })
-        setAiExpl('')
+        setAiExpl(null)
         return
       }
+
+      setResult({ title: 'Resultado da busca', ch: '0 artigos', arts: [] })
+      setAiExpl(null)
+      return
     }
+
+    const found = searchLegalArticles(Object.values(CF_DATA).flatMap((group) => group.arts), term)
+    if (found.length) {
+      setResult({ title: 'Resultado da busca', ch: `${found.length} artigo(s)`, arts: found })
+      setAiExpl(null)
+      return
+    }
+
+    const raw = term.toLowerCase().replace(/\s/g, '')
     const key = Object.keys(CF_DATA).find((k) => raw.includes(k.replace(/[\s.]/g, '')))
-    if (key) { setResult(CF_DATA[key]); setAiExpl('') }
-    else alert(constitution ? 'Nenhum artigo encontrado.' : 'Tente: art. 5, art. 37, art. 93, art. 170 ou art. 196')
+    if (key) { setResult(CF_DATA[key]); setAiExpl(null) }
+    else setResult({ title: 'Resultado da busca', ch: '0 artigos', arts: [] })
   }
 
   const refresh = async () => {
     setUpdating(true)
+    setRefreshMessage('')
     try {
       const updated = await updateSource('constitution')
-      setResult({ title: 'Constituição Federal atualizada', ch: `${updated.articleCount} artigos importados`, arts: updated.articles.slice(0, 12) })
+      setResult({
+        title: updated.stale ? 'Constituição Federal - versão local' : 'Constituição Federal atualizada',
+        ch: `${updated.articleCount} artigos importados`,
+        arts: updated.articles.slice(0, 12),
+      })
+      setRefreshMessage(updated.stale
+        ? 'As fontes oficiais não responderam. A versão local foi mantida e a tentativa foi registrada.'
+        : 'Texto consultado com sucesso em fonte oficial.')
     } catch (err) {
-      alert(err.message || 'Erro ao atualizar Constituicao.')
+      setRefreshMessage(err.message || 'Erro ao atualizar a Constituição.')
     } finally {
       setUpdating(false)
     }
   }
 
-  const explain = async (artText) => {
-    setLoading(true)
+  const explain = async (articleId, articleLabel, artText) => {
+    setLoadingId(articleId)
+    setAiExpl({ articleId, articleLabel, text: '', error: '' })
     try {
-      const r = await askAI(`Explique de forma didática para concurso público: "${artText}". Máximo 4 frases, linguagem clara. Inclua uma ressalva curta para validar o texto em fonte oficial antes de uso profissional.`)
-      setAiExpl(r)
-    } finally { setLoading(false) }
+      const r = await askAI(
+        `Explique de forma didática para estudo jurídico o dispositivo abaixo. Use no máximo 4 frases completas, linguagem clara e não termine no meio de uma frase. Ao final, inclua uma ressalva curta para conferir a fonte oficial.\n\n${articleLabel}: ${artText}`,
+        '',
+        1800
+      )
+      setAiExpl({ articleId, articleLabel, text: r, error: '' })
+    } catch (err) {
+      setAiExpl({
+        articleId,
+        articleLabel,
+        text: '',
+        error: err.message || 'Nao foi possivel gerar a explicacao agora.',
+      })
+    } finally {
+      setLoadingId(null)
+    }
+  }
+
+  const saveArticleNote = (articleId, articleLabel) => {
+    setNote('constitution', articleId, notes[`constitution:${articleId}`]?.text || '', { label: articleLabel })
+    setSavedArticleId(articleId)
+    window.setTimeout(() => setSavedArticleId((current) => current === articleId ? null : current), 2200)
   }
 
   return (
     <div className="fade-in">
       <LegalNotice>
-        Fonte atualizavel pelo Planalto. Suas notas e favoritos ficam separados por artigo para preservar o historico mesmo quando o texto legal for atualizado.
+        Fonte atualizável pelo Planalto e pela Câmara dos Deputados. Suas notas e favoritos ficam separados por artigo para preservar o histórico mesmo quando o texto legal for atualizado.
       </LegalNotice>
       <div className="flex gap-2 flex-wrap mb-4">
         {Object.keys(CF_DATA).map((k) => (
@@ -109,10 +153,25 @@ export function Constituicao() {
         <button onClick={refresh} disabled={updating} className="btn-primary text-xs">
           {updating ? 'Atualizando...' : 'Atualizar fonte oficial'}
         </button>
-        {constitution?.fetchedAt && <span className="chip bg-teal-50 text-teal-700 border-teal-200">Atualizada em {new Date(constitution.fetchedAt).toLocaleString('pt-BR')}</span>}
+        {constitution?.fetchedAt && !constitution.stale && (
+          <span className="chip bg-teal-50 text-teal-700 border-teal-200">
+            Fonte oficial consultada em {new Date(constitution.fetchedAt).toLocaleString('pt-BR')}
+          </span>
+        )}
+        {constitution?.fetchedAt && constitution.stale && (
+          <span className="chip bg-amber-50 text-amber-800 border-amber-200">
+            Versão local de {new Date(constitution.fetchedAt).toLocaleString('pt-BR')}
+            {constitution.checkedAt ? ` · tentativa em ${new Date(constitution.checkedAt).toLocaleString('pt-BR')}` : ''}
+          </span>
+        )}
       </div>
+      {refreshMessage && (
+        <div className={`mb-4 rounded border px-3 py-2 text-xs ${constitution?.stale ? 'border-amber-200 bg-amber-50 text-amber-900' : 'border-teal-200 bg-teal-50 text-teal-800'}`}>
+          {refreshMessage}
+        </div>
+      )}
       <div className="flex gap-2 mb-4">
-        <input className="input flex-1" placeholder="Buscar artigo (ex: art 5)..." value={query}
+        <input className="input flex-1" placeholder="Buscar artigo, palavra ou sigla (ex: art. 5, TCU)..." value={query}
           onChange={(e) => setQuery(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && search()} />
         <button className="btn-primary" onClick={() => search()}>Buscar</button>
       </div>
@@ -123,6 +182,11 @@ export function Constituicao() {
           <span className="chip bg-brand-50 text-brand-700 border-brand-200">{selected.ch}</span>
         </div>
         <div className="divide-y divide-gray-100 dark:divide-gray-800 max-h-96 overflow-y-auto">
+          {selected.arts.length === 0 && (
+            <div className="px-4 py-8 text-center text-sm text-gray-500">
+              Nenhum artigo semelhante foi encontrado.
+            </div>
+          )}
           {selected.arts.map((a, index) => {
             const articleId = a.id || a.n.toLowerCase().replace(/\s+/g, '-')
             const noteKey = `constitution:${articleId}`
@@ -131,7 +195,13 @@ export function Constituicao() {
               <div className="flex items-center justify-between mb-1">
                 <span className="text-xs font-medium text-brand-600">{a.n}</span>
                 <div className="flex gap-2">
-                  <button onClick={() => explain(a.t)} className="text-xs text-gray-400 hover:text-brand-600">✦ Explicar</button>
+                  <button
+                    onClick={() => explain(articleId, a.n, a.t)}
+                    disabled={loadingId !== null}
+                    className="text-xs text-gray-400 hover:text-brand-600 disabled:cursor-wait disabled:opacity-60"
+                  >
+                    {loadingId === articleId ? 'Explicando...' : '✦ Explicar'}
+                  </button>
                   <button onClick={() => toggleFavorite('constitution', articleId)}
                     className={`text-sm ${favorites[noteKey] ? 'text-amber-400' : 'text-gray-300 hover:text-amber-400'}`}>
                     {favorites[noteKey] ? '★' : '☆'}
@@ -139,26 +209,49 @@ export function Constituicao() {
                 </div>
               </div>
               <p className="text-sm leading-relaxed text-gray-700 dark:text-gray-300">{a.t}</p>
+              {aiExpl?.articleId === articleId && (
+                <div className="mt-3 min-w-0 rounded-md border-l-4 border-brand-400 bg-brand-50 px-3 py-3 dark:bg-brand-900/20" aria-live="polite">
+                  <div className="mb-1 flex items-center justify-between gap-3">
+                    <span className="text-xs font-medium text-brand-700 dark:text-brand-200">
+                      Explicação IA · {aiExpl.articleLabel}
+                    </span>
+                    {loadingId === articleId && <span className="text-xs text-gray-500">Gerando...</span>}
+                  </div>
+                  {aiExpl.text && (
+                    <p className="whitespace-pre-wrap break-words text-sm leading-relaxed text-gray-700 dark:text-gray-300">
+                      {aiExpl.text}
+                    </p>
+                  )}
+                  {aiExpl.error && (
+                    <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-amber-800 dark:text-amber-200" role="alert">
+                      <span>{aiExpl.error}</span>
+                      <button className="font-medium underline" onClick={() => explain(articleId, a.n, a.t)}>
+                        Tentar novamente
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
               <textarea
                 className="input h-16 resize-none mt-3 text-xs"
                 placeholder="Anotacoes deste artigo..."
                 value={notes[noteKey]?.text || ''}
-                onChange={(e) => setNote('constitution', articleId, e.target.value)}
+                onChange={(e) => setNote('constitution', articleId, e.target.value, { label: a.n })}
               />
+              <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+                <span className={`text-[11px] ${savedArticleId === articleId ? 'text-emerald-600 dark:text-emerald-400' : 'text-gray-400'}`} aria-live="polite">
+                  {savedArticleId === articleId ? 'Anotação salva.' : 'Alterações preservadas automaticamente.'}
+                </span>
+                <div className="flex gap-2">
+                  <button className="btn-secondary text-xs" onClick={() => setPanel('anotacoes')}>Ver em Anotações</button>
+                  <button className="btn-primary text-xs" onClick={() => saveArticleNote(articleId, a.n)}>Salvar anotação</button>
+                </div>
+              </div>
             </div>
           )})}
         </div>
       </div>
 
-      {aiExpl && (
-        <div className="mt-4 card border-l-4 border-brand-400 bg-brand-50 dark:bg-brand-900/20">
-          <div className="flex items-center gap-2 mb-2">
-            <span className="text-xs font-medium text-brand-700">✦ Explicação IA</span>
-            {loading && <span className="text-xs text-gray-400">Gerando...</span>}
-          </div>
-          <p className="text-sm text-gray-700 dark:text-gray-300 leading-relaxed">{aiExpl}</p>
-        </div>
-      )}
     </div>
   )
 }
@@ -169,16 +262,22 @@ export function Quiz() {
   const [answered, setAnswered] = useState(0)
   const [correct, setCorrect]   = useState(0)
   const [loading, setLoading]   = useState(false)
+  const [error, setError]       = useState('')
   const [cfg, setCfg] = useState({ tema: 'Direitos Fundamentais', dif: 'Médio', num: 2, foco: 'Conceitos gerais' })
 
   const gerar = async () => {
-    setLoading(true); setQs([])
+    setLoading(true); setQs([]); setError('')
     try {
       const r = await askAIJSON(
         `Gere ${cfg.num} questão(ões) de múltipla escolha sobre ${cfg.tema}, nível ${cfg.dif}, foco ${cfg.foco}. JSON apenas sem markdown: {"questoes":[{"pergunta":"...","alternativas":["A) ...","B) ...","C) ...","D) ..."],"correta":0,"explicacao":"..."}]}`
       )
+      if (!Array.isArray(r.questoes) || r.questoes.length === 0) {
+        throw new Error('A IA nao retornou questoes validas. Tente gerar novamente.')
+      }
       setQs(r.questoes.map((q) => ({ ...q, answered: null })))
-    } catch (err) { alert(err.message || 'Erro ao gerar. Verifique a configuracao server-side da IA.') }
+    } catch (err) {
+      setError(err.message || 'Nao foi possivel gerar as questoes agora.')
+    }
     finally { setLoading(false) }
   }
 
@@ -229,6 +328,14 @@ export function Quiz() {
         <button className="btn-primary w-full justify-center" onClick={gerar} disabled={loading}>
           {loading ? 'Gerando questões...' : '✦ Gerar questões com IA'}
         </button>
+        {error && (
+          <div className="mt-3 flex items-center justify-between gap-3 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200" role="alert">
+            <span>{error}</span>
+            <button className="font-medium underline whitespace-nowrap" onClick={gerar} disabled={loading}>
+              Tentar novamente
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Questões */}
@@ -373,8 +480,43 @@ export function Pena() {
 // ─── Config ─────────────────────────────────────────────────────────────────────
 export function Config() {
   const { darkMode, toggleDarkMode } = useUIStore()
+  const [backupStatus, setBackupStatus] = useState('')
+
+  const exportBackup = () => {
+    const payload = {
+      exportedAt: new Date().toISOString(),
+      app: 'Legal Flow OS',
+      ...getAppStateSnapshot(),
+    }
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const anchor = document.createElement('a')
+    anchor.href = url
+    anchor.download = `legal-flow-backup-${new Date().toISOString().slice(0, 10)}.json`
+    anchor.click()
+    URL.revokeObjectURL(url)
+    setBackupStatus('Backup exportado.')
+  }
+
+  const importBackup = async (event) => {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    if (!file) return
+    try {
+      const data = JSON.parse(await file.text())
+      if (data?.app !== 'Legal Flow OS' || typeof data.version !== 'number') {
+        throw new Error('Arquivo de backup inválido.')
+      }
+      if (!window.confirm('Importar este backup substituirá os dados atuais das áreas incluídas. Continuar?')) return
+      hydrateAppState(data)
+      setBackupStatus('Backup importado com sucesso.')
+    } catch (error) {
+      setBackupStatus(error.message || 'Não foi possível importar o backup.')
+    }
+  }
+
   return (
-    <div className="fade-in max-w-md">
+    <div className="fade-in max-w-2xl space-y-4">
       <div className="card space-y-4">
         <h3 className="text-sm font-medium">Configurações</h3>
         <div className="flex items-center justify-between py-2 border-b border-gray-100 dark:border-gray-800">
@@ -388,6 +530,18 @@ export function Config() {
           <p className="text-xs text-gray-500 mb-2">As chaves de IA devem ficar no servidor. Configure <code className="bg-gray-100 dark:bg-gray-800 px-1 rounded">GEMINI_API_KEY</code> ou <code className="bg-gray-100 dark:bg-gray-800 px-1 rounded">ANTHROPIC_API_KEY</code> no ambiente de deploy.</p>
           <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-3 text-xs font-mono text-gray-500">Frontend -&gt; /api/ai -&gt; provedor de IA</div>
         </div>
+      </div>
+      <div className="card">
+        <h3 className="text-sm font-medium">Backup dos dados</h3>
+        <p className="mt-1 text-xs leading-relaxed text-gray-500">Inclui disciplinas, textos extraídos, análises, anotações, tarefas, agenda, metas e estudos. O arquivo permanece no seu computador.</p>
+        <div className="mt-4 flex flex-wrap gap-2">
+          <button className="btn-primary" onClick={exportBackup}>Exportar backup</button>
+          <label className="btn-secondary cursor-pointer">
+            Importar backup
+            <input type="file" accept="application/json,.json" className="hidden" onChange={importBackup} />
+          </label>
+        </div>
+        {backupStatus && <p className="mt-3 text-xs text-gray-600 dark:text-gray-300" role="status">{backupStatus}</p>}
       </div>
     </div>
   )

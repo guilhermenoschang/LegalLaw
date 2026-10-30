@@ -3,6 +3,9 @@ const SOURCES = {
   penalCode: 'https://www.planalto.gov.br/ccivil_03/decreto-lei/del2848compilado.htm',
 }
 
+const CONSTITUTION_PORTAL = 'https://www2.camara.leg.br/a-camara/atividade-legislativa/legislacao/constituicao1988'
+const MIN_ARTICLES = { constitution: 250, penalCode: 200 }
+
 async function readSnapshot(type) {
   const fs = await import('node:fs/promises')
   const path = await import('node:path')
@@ -14,24 +17,33 @@ async function readSnapshot(type) {
 }
 
 async function fetchText(source) {
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), 12000)
+
   try {
-    const response = await fetch(source)
-    if (!response.ok) throw new Error(`HTTP ${response.status}`)
-    return await response.text()
-  } catch {
-    const https = await import('node:https')
-    return new Promise((resolve, reject) => {
-      https.get(source, { rejectUnauthorized: false }, (response) => {
-        if (response.statusCode >= 400) {
-          reject(new Error(`HTTP ${response.statusCode}`))
-          return
-        }
-        let data = ''
-        response.setEncoding('latin1')
-        response.on('data', (chunk) => { data += chunk })
-        response.on('end', () => resolve(Buffer.from(data, 'latin1').toString('utf8')))
-      }).on('error', reject)
+    const response = await fetch(source, {
+      headers: {
+        Accept: 'text/html,application/xhtml+xml',
+        'User-Agent': 'LegalFlowOS/1.0 (+https://legallaw.netlify.app)',
+      },
+      redirect: 'follow',
+      signal: controller.signal,
     })
+    if (!response.ok) throw new Error(`HTTP ${response.status}`)
+
+    const bytes = await response.arrayBuffer()
+    const preview = new TextDecoder('windows-1252').decode(bytes.slice(0, 4096))
+    const declaredCharset = response.headers.get('content-type')?.match(/charset=([^;\s]+)/i)?.[1]
+      || preview.match(/charset=["']?([^"'\s/>]+)/i)?.[1]
+      || 'windows-1252'
+
+    try {
+      return new TextDecoder(declaredCharset).decode(bytes)
+    } catch {
+      return new TextDecoder('windows-1252').decode(bytes)
+    }
+  } finally {
+    clearTimeout(timeout)
   }
 }
 
@@ -41,34 +53,39 @@ function sendJson(res, status, body) {
   res.end(JSON.stringify(body))
 }
 
+const HTML_ENTITIES = {
+  amp: '&', apos: "'", gt: '>', ldquo: '“', lt: '<', nbsp: ' ', ordm: 'º', quot: '"',
+  rdquo: '”', rsquo: '’', sect: '§',
+  Aacute: 'Á', Acirc: 'Â', Agrave: 'À', Atilde: 'Ã', Auml: 'Ä',
+  Ccedil: 'Ç', Eacute: 'É', Ecirc: 'Ê', Egrave: 'È', Euml: 'Ë',
+  Iacute: 'Í', Icirc: 'Î', Igrave: 'Ì', Iuml: 'Ï', Ntilde: 'Ñ',
+  Oacute: 'Ó', Ocirc: 'Ô', Ograve: 'Ò', Otilde: 'Õ', Ouml: 'Ö',
+  Uacute: 'Ú', Ucirc: 'Û', Ugrave: 'Ù', Uuml: 'Ü',
+  aacute: 'á', acirc: 'â', agrave: 'à', atilde: 'ã', auml: 'ä',
+  ccedil: 'ç', eacute: 'é', ecirc: 'ê', egrave: 'è', euml: 'ë',
+  iacute: 'í', icirc: 'î', igrave: 'ì', iuml: 'ï', ntilde: 'ñ',
+  oacute: 'ó', ocirc: 'ô', ograve: 'ò', otilde: 'õ', ouml: 'ö',
+  uacute: 'ú', ucirc: 'û', ugrave: 'ù', uuml: 'ü',
+}
+
+function decodeHtmlEntities(text) {
+  return text.replace(/&(#x[\da-f]+|#\d+|[a-z]+);/gi, (match, entity) => {
+    if (entity.startsWith('#x')) return String.fromCodePoint(Number.parseInt(entity.slice(2), 16))
+    if (entity.startsWith('#')) return String.fromCodePoint(Number.parseInt(entity.slice(1), 10))
+    return HTML_ENTITIES[entity] ?? match
+  })
+}
+
 function stripHtml(html) {
-  return html
+  return decodeHtmlEntities(html
     .replace(/<script[\s\S]*?<\/script>/gi, ' ')
     .replace(/<style[\s\S]*?<\/style>/gi, ' ')
     .replace(/<br\s*\/?>/gi, '\n')
     .replace(/<\/p>|<\/div>|<\/li>|<\/tr>|<\/h\d>/gi, '\n')
     .replace(/<[^>]+>/g, ' ')
-    .replace(/&nbsp;/g, ' ')
-    .replace(/&ordm;/g, 'o')
-    .replace(/&sect;/g, '§')
-    .replace(/&ccedil;/g, 'ç')
-    .replace(/&atilde;/g, 'ã')
-    .replace(/&otilde;/g, 'õ')
-    .replace(/&aacute;/g, 'á')
-    .replace(/&eacute;/g, 'é')
-    .replace(/&iacute;/g, 'í')
-    .replace(/&oacute;/g, 'ó')
-    .replace(/&uacute;/g, 'ú')
-    .replace(/&acirc;/g, 'â')
-    .replace(/&ecirc;/g, 'ê')
-    .replace(/&ocirc;/g, 'ô')
-    .replace(/&Atilde;/g, 'Ã')
-    .replace(/&Ccedil;/g, 'Ç')
-    .replace(/&quot;/g, '"')
-    .replace(/&#(\d+);/g, (_, code) => String.fromCharCode(Number(code)))
     .replace(/[ \t]+/g, ' ')
     .replace(/\n{3,}/g, '\n\n')
-    .trim()
+    .trim())
 }
 
 function parseArticles(text) {
@@ -113,6 +130,40 @@ function parsePenalCatalog(articles) {
   }).filter(Boolean)
 }
 
+async function fetchConstitutionFromCamara() {
+  const portalHtml = await fetchText(CONSTITUTION_PORTAL)
+  const relativeUrl = portalHtml.match(/href=["']([^"']*ConstituicaoTextoAtualizado[^"']*\.html)["']/i)?.[1]
+  if (!relativeUrl) throw new Error('Link do texto atualizado nao encontrado na Camara.')
+  const source = new URL(relativeUrl.replace(/&amp;/g, '&'), CONSTITUTION_PORTAL).href
+  return { source, html: await fetchText(source) }
+}
+
+async function fetchOfficialSource(type) {
+  const errors = []
+  const candidates = [{ source: SOURCES[type], load: () => fetchText(SOURCES[type]) }]
+
+  if (type === 'constitution') {
+    candidates.push({ source: CONSTITUTION_PORTAL, load: fetchConstitutionFromCamara })
+  }
+
+  for (const candidate of candidates) {
+    try {
+      const loaded = await candidate.load()
+      const source = typeof loaded === 'string' ? candidate.source : loaded.source
+      const html = typeof loaded === 'string' ? loaded : loaded.html
+      const articles = parseArticles(stripHtml(html))
+      if (articles.length < MIN_ARTICLES[type]) {
+        throw new Error(`Conteudo incompleto (${articles.length} artigos).`)
+      }
+      return { source, articles }
+    } catch (error) {
+      errors.push(`${candidate.source}: ${error.message || 'falha na consulta'}`)
+    }
+  }
+
+  throw new Error(errors.join(' | '))
+}
+
 export default async function handler(req, res) {
   const url = new URL(req.url, 'http://localhost')
   const type = url.searchParams.get('type')
@@ -121,13 +172,16 @@ export default async function handler(req, res) {
   if (!source) return sendJson(res, 400, { error: 'Fonte invalida.' })
 
   try {
-    const html = await fetchText(source)
-    const text = stripHtml(html)
-    const articles = parseArticles(text)
+    const official = await fetchOfficialSource(type)
+    const checkedAt = new Date().toISOString()
+    const articles = official.articles
     const body = {
       type,
-      source,
-      fetchedAt: new Date().toISOString(),
+      source: official.source,
+      fetchedAt: checkedAt,
+      checkedAt,
+      sourceStatus: 'online',
+      stale: false,
       articleCount: articles.length,
       articles,
     }
@@ -142,6 +196,8 @@ export default async function handler(req, res) {
       const snapshot = await readSnapshot(type)
       return sendJson(res, 200, {
         ...snapshot,
+        checkedAt: new Date().toISOString(),
+        sourceStatus: 'snapshot',
         stale: true,
         fallbackReason: error.message || 'Fonte online indisponivel.',
       })
