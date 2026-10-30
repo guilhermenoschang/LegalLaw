@@ -7,6 +7,7 @@ const SOURCES = {
 }
 
 const CONSTITUTION_PORTAL = 'https://www2.camara.leg.br/a-camara/atividade-legislativa/legislacao/constituicao1988'
+const SENATE_CONSTITUTION = 'https://legis.senado.leg.br/norma/579494/publicacao/16434817'
 const MIN_ARTICLES = { constitution: 250, penalCode: 200 }
 
 function json(statusCode, body) {
@@ -96,6 +97,7 @@ async function fetchOfficialSource(type) {
   const candidates = [{ source: SOURCES[type], load: () => fetchText(SOURCES[type]) }]
 
   if (type === 'constitution') {
+    candidates.push({ source: SENATE_CONSTITUTION, load: () => fetchText(SENATE_CONSTITUTION) })
     candidates.push({ source: CONSTITUTION_PORTAL, load: fetchConstitutionFromCamara })
   }
 

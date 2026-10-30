@@ -141,7 +141,7 @@ export function Constituicao() {
   return (
     <div className="fade-in">
       <LegalNotice>
-        Fonte atualizável pelo Planalto e pela Câmara dos Deputados. Suas notas e favoritos ficam separados por artigo para preservar o histórico mesmo quando o texto legal for atualizado.
+        Fonte atualizável pelo Planalto, Senado Federal e Câmara dos Deputados. Suas notas e favoritos ficam separados por artigo para preservar o histórico mesmo quando o texto legal for atualizado.
       </LegalNotice>
       <div className="flex gap-2 flex-wrap mb-4">
         {Object.keys(CF_DATA).map((k) => (
